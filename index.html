@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BISINDO Translator</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0a0a0f;
+    color: #f0ede8;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid #1e1e2e;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: #7c6af7;
+    box-shadow: 0 0 12px #7c6af7aa;
+  }
+
+  header h1 {
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    color: #9896a4;
+    text-transform: uppercase;
+  }
+
+  header span {
+    font-size: 15px;
+    color: #f0ede8;
+    font-weight: 500;
+  }
+
+  .main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+
+  /* LEFT — kamera */
+  .cam-panel {
+    padding: 2rem;
+    border-right: 1px solid #1e1e2e;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .cam-label {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #4e4d5e;
+    font-weight: 500;
+  }
+
+  .cam-wrap {
+    position: relative;
+    background: #0f0f1a;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #1e1e2e;
+    aspect-ratio: 4/3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #webcam-container canvas {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover;
+    border-radius: 12px;
+  }
+
+  .cam-placeholder {
+    text-align: center;
+    color: #4e4d5e;
+  }
+
+  .cam-placeholder .icon {
+    font-size: 40px;
+    margin-bottom: 12px;
+  }
+
+  .cam-placeholder p {
+    font-size: 13px;
+  }
+
+  /* Deteksi label overlay */
+  .detection-badge {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    background: rgba(10,10,15,0.85);
+    backdrop-filter: blur(8px);
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid #1e1e2e;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .detection-badge.visible { opacity: 1; }
+
+  .det-label {
+    font-size: 18px;
+    font-weight: 600;
+    color: #f0ede8;
+  }
+
+  .det-conf {
+    font-size: 12px;
+    color: #7c6af7;
+    font-weight: 500;
+  }
+
+  /* Confidence bars */
+  .bars {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .bar-name {
+    font-size: 12px;
+    color: #9896a4;
+    width: 100px;
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .bar-track {
+    flex: 1;
+    height: 4px;
+    background: #1e1e2e;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .bar-fill {
+    height: 100%;
+    background: #7c6af7;
+    border-radius: 2px;
+    transition: width 0.15s ease;
+    width: 0%;
+  }
+
+  .bar-pct {
+    font-size: 11px;
+    color: #4e4d5e;
+    width: 34px;
+    text-align: right;
+  }
+
+  /* RIGHT — output */
+  .output-panel {
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .output-label {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #4e4d5e;
+    font-weight: 500;
+  }
+
+  /* Kata saat ini */
+  .current-word {
+    background: #0f0f1a;
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    padding: 1.5rem;
+    min-height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .current-word-text {
+    font-size: 48px;
+    font-weight: 700;
+    color: #7c6af7;
+    text-align: center;
+    letter-spacing: -1px;
+    transition: all 0.2s;
+  }
+
+  .current-word-text.flash {
+    color: #fff;
+    transform: scale(1.08);
+  }
+
+  .conf-indicator {
+    position: absolute;
+    bottom: 10px;
+    right: 14px;
+    font-size: 11px;
+    color: #4e4d5e;
+  }
+
+  /* Threshold slider */
+  .threshold-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: #0f0f1a;
+    border-radius: 8px;
+    border: 1px solid #1e1e2e;
+  }
+
+  .threshold-row label {
+    font-size: 12px;
+    color: #9896a4;
+    white-space: nowrap;
+  }
+
+  #threshold-slider {
+    flex: 1;
+    accent-color: #7c6af7;
+    cursor: pointer;
+  }
+
+  #threshold-val {
+    font-size: 12px;
+    color: #7c6af7;
+    font-weight: 600;
+    min-width: 32px;
+    text-align: right;
+  }
+
+  /* Kalimat output */
+  .sentence-box {
+    flex: 1;
+    background: #0f0f1a;
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    padding: 1.25rem;
+    min-height: 140px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .sentence-text {
+    flex: 1;
+    font-size: 22px;
+    font-weight: 500;
+    color: #f0ede8;
+    line-height: 1.6;
+    word-break: break-word;
+  }
+
+  .sentence-text.empty {
+    font-size: 14px;
+    color: #2e2e3e;
+    font-weight: 400;
+    display: flex;
+    align-items: center;
+  }
+
+  .word-chip {
+    display: inline-block;
+    background: #1a1a2e;
+    border: 1px solid #2e2e4e;
+    border-radius: 6px;
+    padding: 2px 10px;
+    margin: 2px 3px;
+    font-size: 20px;
+    color: #f0ede8;
+    animation: chipIn 0.2s ease;
+  }
+
+  @keyframes chipIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Buttons */
+  .btn-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .btn {
+    flex: 1;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: none;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+
+  .btn-primary {
+    background: #7c6af7;
+    color: #fff;
+  }
+
+  .btn-primary:hover { background: #6a58e0; }
+  .btn-primary:disabled { background: #2e2e4e; color: #4e4d5e; cursor: not-allowed; }
+
+  .btn-ghost {
+    background: #1a1a2e;
+    color: #9896a4;
+    border: 1px solid #2e2e3e;
+  }
+
+  .btn-ghost:hover { background: #22223a; color: #f0ede8; }
+  .btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-danger {
+    background: #2e1a1a;
+    color: #e07070;
+    border: 1px solid #3e2a2a;
+  }
+
+  .btn-danger:hover { background: #3e2020; }
+
+  /* Add word button */
+  .add-btn {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px dashed #2e2e4e;
+    background: transparent;
+    color: #4e4d5e;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+
+  .add-btn:hover:not(:disabled) {
+    border-color: #7c6af7;
+    color: #7c6af7;
+    background: #0f0f1a;
+  }
+
+  .add-btn:disabled { cursor: not-allowed; opacity: 0.4; }
+
+  /* Status */
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #4e4d5e;
+    display: inline-block;
+    margin-right: 6px;
+  }
+
+  .status-dot.active {
+    background: #4ade80;
+    box-shadow: 0 0 8px #4ade8088;
+    animation: pulse 1.5s infinite;
+  }
+
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .status-text {
+    font-size: 12px;
+    color: #4e4d5e;
+  }
+
+  footer {
+    padding: 1rem 2rem;
+    border-top: 1px solid #1e1e2e;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .nothing-note {
+    font-size: 11px;
+    color: #3e3d4e;
+  }
+
+  @media (max-width: 768px) {
+    .main { grid-template-columns: 1fr; }
+    .cam-panel { border-right: none; border-bottom: 1px solid #1e1e2e; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-dot"></div>
+  <h1>BISINDO &nbsp;<span>Translator</span></h1>
+</header>
+
+<div class="main">
+
+  <!-- LEFT: Kamera -->
+  <div class="cam-panel">
+    <div class="cam-label">
+      <span class="status-dot" id="status-dot"></span>
+      <span class="status-text" id="status-text">Belum aktif</span>
+    </div>
+
+    <div class="cam-wrap" id="cam-wrap">
+      <div class="cam-placeholder" id="cam-placeholder">
+        <div class="icon">📷</div>
+        <p>Klik "Mulai Kamera" untuk memulai</p>
+      </div>
+      <div id="webcam-container"></div>
+      <div class="detection-badge" id="det-badge">
+        <span class="det-label" id="det-label">—</span>
+        <span class="det-conf" id="det-conf">0%</span>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-start" onclick="startCamera()">Mulai Kamera</button>
+      <button class="btn btn-ghost" id="btn-stop" onclick="stopCamera()" disabled>Stop</button>
+    </div>
+
+    <!-- Confidence bars -->
+    <div class="cam-label" style="margin-top:4px">Confidence per class</div>
+    <div class="bars" id="bars"></div>
+  </div>
+
+  <!-- RIGHT: Output -->
+  <div class="output-panel">
+    <div class="output-label">Gestur Terdeteksi</div>
+
+    <div class="current-word">
+      <div class="current-word-text" id="current-word">—</div>
+      <div class="conf-indicator" id="conf-indicator"></div>
+    </div>
+
+    <!-- Threshold -->
+    <div class="threshold-row">
+      <label>Min. confidence</label>
+      <input type="range" id="threshold-slider" min="50" max="95" value="75"
+             oninput="document.getElementById('threshold-val').textContent = this.value + '%'">
+      <span id="threshold-val">75%</span>
+    </div>
+
+    <button class="add-btn" id="add-btn" onclick="addWord()" disabled>
+      + Tambahkan kata ini ke kalimat
+    </button>
+
+    <div class="output-label">Kalimat</div>
+
+    <div class="sentence-box">
+      <div class="sentence-text empty" id="sentence-display">
+        Kata-kata yang kamu tambahkan akan muncul di sini...
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-ghost" id="btn-hapus-kata" onclick="hapusKataТерakhir()" disabled>← Hapus kata</button>
+      <button class="btn btn-danger" id="btn-reset" onclick="resetKalimat()" disabled>Reset</button>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <span class="nothing-note">💡 Tips: Tambahkan class "nothing" di model untuk stabilitas lebih baik</span>
+  <span class="nothing-note">Model: jaahOZLIT</span>
+</footer>
+
+<script>
+  const MODEL_URL = 'https://teachablemachine.withgoogle.com/models/jaahOZLIT/';
+  let model, webcam, maxPredictions;
+  let isRunning = false;
+  let currentLabel = '—';
+  let currentConf = 0;
+  let words = [];
+  let animFrame;
+
+  async function startCamera() {
+    const btn = document.getElementById('btn-start');
+    btn.textContent = 'Memuat model...';
+    btn.disabled = true;
+
+    try {
+      model = await tmImage.load(MODEL_URL + 'model.json', MODEL_URL + 'metadata.json');
+      maxPredictions = model.getTotalClasses();
+
+      webcam = new tmImage.Webcam(400, 300, true);
+      await webcam.setup();
+      await webcam.play();
+
+      document.getElementById('cam-placeholder').style.display = 'none';
+      document.getElementById('webcam-container').appendChild(webcam.canvas);
+
+      buildBars(model.getClassLabels());
+
+      isRunning = true;
+      document.getElementById('status-dot').classList.add('active');
+      document.getElementById('status-text').textContent = 'Aktif — mendeteksi gestur';
+      document.getElementById('btn-stop').disabled = false;
+      document.getElementById('add-btn').disabled = false;
+      btn.textContent = 'Mulai Kamera';
+      btn.disabled = true;
+
+      loop();
+    } catch (e) {
+      btn.textContent = 'Mulai Kamera';
+      btn.disabled = false;
+      alert('Gagal memuat model: ' + e.message);
+    }
+  }
+
+  function stopCamera() {
+    isRunning = false;
+    if (animFrame) cancelAnimationFrame(animFrame);
+    if (webcam) webcam.stop();
+    document.getElementById('status-dot').classList.remove('active');
+    document.getElementById('status-text').textContent = 'Dihentikan';
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-stop').disabled = true;
+    document.getElementById('add-btn').disabled = true;
+    document.getElementById('det-badge').classList.remove('visible');
+    document.getElementById('current-word').textContent = '—';
+    document.getElementById('conf-indicator').textContent = '';
+  }
+
+  async function loop() {
+    if (!isRunning) return;
+    webcam.update();
+    await predict();
+    animFrame = requestAnimationFrame(loop);
+  }
+
+  async function predict() {
+    const preds = await model.predict(webcam.canvas);
+    const threshold = parseInt(document.getElementById('threshold-slider').value) / 100;
+
+    // Update bars
+    preds.forEach((p, i) => {
+      const fill = document.getElementById('fill-' + i);
+      const pct  = document.getElementById('pct-' + i);
+      if (fill) fill.style.width = (p.probability * 100).toFixed(1) + '%';
+      if (pct)  pct.textContent  = (p.probability * 100).toFixed(0) + '%';
+    });
+
+    // Best prediction
+    const best = preds.reduce((a, b) => a.probability > b.probability ? a : b);
+    currentConf = best.probability;
+    currentLabel = best.className;
+
+    const badge = document.getElementById('det-badge');
+    const wordEl = document.getElementById('current-word');
+    const confEl = document.getElementById('conf-indicator');
+
+    if (best.probability >= threshold && best.className.toLowerCase() !== 'nothing') {
+      badge.classList.add('visible');
+      document.getElementById('det-label').textContent = best.className;
+      document.getElementById('det-conf').textContent = (best.probability * 100).toFixed(0) + '%';
+
+      wordEl.textContent = best.className;
+      wordEl.style.color = '#7c6af7';
+      confEl.textContent = (best.probability * 100).toFixed(0) + '%';
+    } else {
+      badge.classList.remove('visible');
+      wordEl.textContent = '—';
+      wordEl.style.color = '#2e2e4e';
+      confEl.textContent = '';
+    }
+  }
+
+  function buildBars(labels) {
+    const container = document.getElementById('bars');
+    container.innerHTML = '';
+    labels.forEach((label, i) => {
+      container.innerHTML += `
+        <div class="bar-row">
+          <span class="bar-name" title="${label}">${label}</span>
+          <div class="bar-track"><div class="bar-fill" id="fill-${i}"></div></div>
+          <span class="bar-pct" id="pct-${i}">0%</span>
+        </div>`;
+    });
+  }
+
+  function addWord() {
+    const threshold = parseInt(document.getElementById('threshold-slider').value) / 100;
+    if (currentConf < threshold || currentLabel === '—' || currentLabel.toLowerCase() === 'nothing') return;
+
+    words.push(currentLabel);
+    renderSentence();
+
+    // Flash animation
+    const wordEl = document.getElementById('current-word');
+    wordEl.classList.add('flash');
+    setTimeout(() => wordEl.classList.remove('flash'), 300);
+
+    document.getElementById('btn-hapus-kata').disabled = false;
+    document.getElementById('btn-reset').disabled = false;
+  }
+
+  function renderSentence() {
+    const el = document.getElementById('sentence-display');
+    if (words.length === 0) {
+      el.className = 'sentence-text empty';
+      el.textContent = 'Kata-kata yang kamu tambahkan akan muncul di sini...';
+      return;
+    }
+    el.className = 'sentence-text';
+    el.innerHTML = words.map(w => `<span class="word-chip">${w}</span>`).join(' ');
+  }
+
+  function hapusKataТерakhir() {
+    words.pop();
+    renderSentence();
+    if (words.length === 0) {
+      document.getElementById('btn-hapus-kata').disabled = true;
+      document.getElementById('btn-reset').disabled = true;
+    }
+  }
+
+  function resetKalimat() {
+    words = [];
+    renderSentence();
+    document.getElementById('btn-hapus-kata').disabled = true;
+    document.getElementById('btn-reset').disabled = true;
+  }
+</script>
+</body>
+</html>
